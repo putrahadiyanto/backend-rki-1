@@ -1,26 +1,36 @@
-# 1. Use an official Python runtime as a parent image (slim version for smaller image size)
-FROM python:3.11-slim
+# STAGE 1: The Builder
+FROM python:3.11-slim AS builder
 
-# 2. Prevent Python from writing .pyc files and ensure output is sent directly to logs
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-
-# 3. Set the working directory in the container
 WORKDIR /app
 
-# 4. Install system dependencies (if needed)
-# ffmpeg is used for audio processing, and build-essential is required for compiling any C extensions if needed by Python packages
+# Install build-essential only for the build phase
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    ffmpeg \
     build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# 5. Copy the requirements file into the container
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Install packages to a local folder to easily copy them later
+RUN pip install --user --no-cache-dir -r requirements.txt
 
-# 6. Copy the rest of the application code into the container
+# STAGE 2: The Final Runtime (Lightweight)
+FROM python:3.11-slim
+
+# Standard Python optimizations
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+WORKDIR /app
+
+# Install ONLY ffmpeg (needed for your Groq/Audio tasks)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy the compiled dependencies from the builder stage
+COPY --from=builder /root/.local /root/.local
+ENV PATH=/root/.local/bin:$PATH
+
+# Copy app code
 COPY . .
 
-# 7. Expose the port that the FastAPI app will run on
 EXPOSE 8000
