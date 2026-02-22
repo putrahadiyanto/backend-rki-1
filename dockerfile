@@ -1,7 +1,7 @@
 # STAGE 1: The Builder
 FROM python:3.11-slim AS builder
 
-WORKDIR /app
+WORKDIR /code
 
 # Install build-essential only for the build phase
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -19,7 +19,7 @@ FROM python:3.11-slim
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 
-WORKDIR /app
+WORKDIR /code
 
 # Install ONLY ffmpeg (needed for your Groq/Audio tasks)
 RUN apt-get update && apt-get install -y --no-install-recommends \
