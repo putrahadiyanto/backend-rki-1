@@ -1,6 +1,5 @@
 import os
 from motor.motor_asyncio import AsyncIOMotorClient
-from pydantic_settings import BaseSettings
 
 from app.utils.logger import get_logger
 
@@ -17,11 +16,7 @@ logger = get_logger()
 
 
 # Connect to MongoDB using the provided URI
-async def connect(self, uri: str):
-
-    # Load MongoDB URI and database name from environment variables
-    uri = os.getenv(uri)
-    db_name = os.getenv('MONGO_DB_NAME')
+async def connect(uri: str):
 
     # Attempt to connect to MongoDB
     try:
@@ -32,6 +27,7 @@ async def connect(self, uri: str):
         )
 
         await db.client.admin.command('ping')
+        db_name = os.getenv('MONGO_DB_NAME')
         logger.info(f"Successfully connected to MongoDB: {db_name}")
     
     except Exception as e:
@@ -39,7 +35,7 @@ async def connect(self, uri: str):
         raise e
 
 # Disconnect from MongoDB
-async def disconnect(self):
+async def disconnect():
     # Close the MongoDB client connection if it exists
     if db.client:
         db.client.close()
@@ -48,4 +44,8 @@ async def disconnect(self):
 def get_database():
     # Return the MongoDB client instance
     db_name = os.getenv('MONGO_DB_NAME')
+    if not db.client:
+        raise RuntimeError("MongoDB client is not connected")
+    if not db_name:
+        raise RuntimeError("MONGO_DB_NAME is not set in environment")
     return db.client[db_name]
