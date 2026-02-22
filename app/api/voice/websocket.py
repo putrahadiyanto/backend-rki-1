@@ -32,8 +32,12 @@ async def voice_websocket(websocket: WebSocket):
                 break
             
             if "bytes" in message:
-                # Accumulate raw audio frames
-                audio_buffer.extend(message["bytes"])
+                # Defensive check to prevent buffer overflow
+                if len(audio_buffer) + len(message["bytes"]) < 10 * 1024 * 1024:  # 10MB limit
+                    audio_buffer.extend(message["bytes"])
+                else:
+                    logger.warning("Audio buffer exceeded 10MB, resetting buffer") # This is a safety measure to prevent memory issues
+                    audio_buffer.clear()
             
             elif "text" in message:
                 signal = message["text"]
