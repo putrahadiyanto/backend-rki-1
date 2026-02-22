@@ -1,8 +1,8 @@
 import io
 import os
-from groq import Groq
+from groq import AsyncGroq
 
-groq = Groq()
+groq = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))
 
 async def transcribe_audio(audio_data: bytes) -> str:
 
