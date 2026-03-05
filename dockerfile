@@ -10,7 +10,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY requirements.txt .
 # Install packages to a local folder to easily copy them later
-RUN pip install --user --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --user --no-cache-dir --default-timeout=100 -r requirements.txt
+
 
 # STAGE 2: The Final Runtime (Lightweight)
 FROM python:3.11-slim

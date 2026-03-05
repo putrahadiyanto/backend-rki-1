@@ -2,23 +2,22 @@ from fastapi import FastAPI
 from contextlib import asynccontextmanager
 import os
 from app.api.voice.websocket import router as voice_router
-from app.db.mongodb import connect, disconnect
-from contextlib import asynccontextmanager
+from app.api.document.ingest import router as ingest_router
+from app.db.mongodb import db, connect, disconnect
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Connect to MongoDB when the application starts
     uri = os.getenv('MONGO_URI')
 
-    if not uri:
-        raise RuntimeError("MONGO_URI is not set in environment")
-    
-
+    # Connect to the DB
     await connect(uri)
-
-    yield
+    # Store the database manager in app.state for standard access
+    app.state.db = db
     
-    # Disconnect from MongoDB when the application shuts down
+    yield
+
+    # Disconnect from the DB when the application shuts down
     await disconnect()
 
 app = FastAPI(
@@ -27,6 +26,7 @@ app = FastAPI(
 )
 
 app.include_router(voice_router)
+app.include_router(ingest_router)
 
 @app.get("/")
 async def root():
