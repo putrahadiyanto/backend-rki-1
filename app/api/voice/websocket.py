@@ -1,15 +1,21 @@
-from fastapi import WebSocket, APIRouter, WebSocketDisconnect
-from websockets import route
+from fastapi import WebSocket, APIRouter, WebSocketDisconnect, HTTPException
 from app.utils.logger import get_logger
+from app.services.auth_service import AuthService
 from app.services.llm_service import generate_response
 from app.services.stt_service import transcribe_audio
 
 logger = get_logger()
 
 router = APIRouter()
+auth_service = AuthService()
 
 @router.websocket("/ws/voice")
-async def voice_websocket(websocket: WebSocket):
+async def voice_websocket(websocket: WebSocket, token: str):
+    try:
+        user = await auth_service.get_current_user(token)
+    except HTTPException:
+        await websocket.close(code=1008)
+        return
     await websocket.accept()
     audio_buffer = bytearray()
     
