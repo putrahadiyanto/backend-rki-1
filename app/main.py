@@ -7,6 +7,7 @@ import os
 from app.api.voice.websocket import router as voice_router
 from app.api.document.ingest import router as ingest_router
 from app.api.auth.auth import router as auth_router
+from app.api.chat.websocket import router as chat_router
 from app.db.mongodb import db, connect, disconnect
 
 @asynccontextmanager
@@ -31,6 +32,7 @@ app = FastAPI(
 
 app.include_router(voice_router)
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
+app.include_router(chat_router)
 # app.include_router(ingest_router)
 
 @app.get("/")

@@ -52,3 +52,27 @@ def split_think_and_answer(raw_text: str):
         answer = ""
 
     return thought, answer
+
+
+async def generate_chat_response(messages: list[dict]) -> dict:
+    """
+    Multi-turn chat completion.
+    `messages` is a list of {"role": "user"|"assistant", "content": "..."} dicts
+    representing the conversation history.
+    """
+    try:
+        response = await groq.chat.completions.create(
+            model='qwen/qwen3-32b',
+            messages=messages,
+            temperature=0.7,
+            max_tokens=1000,
+        )
+        raw = response.choices[0].message.content
+        thoughts, answer = split_think_and_answer(raw)
+        return {"thoughts": thoughts, "answer": answer}
+    except Exception as e:
+        print(f"Error during chat response generation: {e}")
+        return {
+            "thoughts": "",
+            "answer": "Sorry, I encountered an error while processing your request.",
+        }
