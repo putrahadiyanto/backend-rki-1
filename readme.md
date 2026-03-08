@@ -1,6 +1,6 @@
 # Backend RKI-1
 
-A FastAPI-based backend service integrating speech-to-text, LLM capabilities, and document processing for intelligent conversational applications.
+A FastAPI-based backend service integrating speech-to-text, LLM capabilities, document processing, and multi-turn chat for intelligent conversational applications.
 
 ## Features
 
@@ -8,6 +8,8 @@ A FastAPI-based backend service integrating speech-to-text, LLM capabilities, an
 - **MongoDB Integration**: Async MongoDB client (Motor) with connection lifecycle management.
 - **Speech-to-Text (STT)**: Audio transcription using Groq's Whisper model (whisper-large-v3-turbo).
 - **LLM Integration**: Text generation, thinking/answer separation using Groq's language models.
+- **Multi-turn Chat**: WebSocket-based chat with persistent session history in MongoDB.
+- **Authentication**: JWT-based user registration, login, and token management.
 - **Document Processing**: PDF to Markdown conversion and text chunking (for RAG).
 - **Containerization**: Docker support for easy building and deployment.
 
@@ -66,7 +68,47 @@ A FastAPI-based backend service integrating speech-to-text, LLM capabilities, an
    docker-compose up --build
    ```
 
-## API Documentation
+## Endpoints
+
+### REST API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Health check |
+| `POST` | `/auth/register` | Register a new user (`username`, `email`, `password`) |
+| `POST` | `/auth/token` | Login and receive a JWT access token |
+| `POST` | `/auth/logout` | Logout (client-side token invalidation) |
+
+### WebSocket
+
+| Path | Description |
+|------|-------------|
+| `/ws/voice` | Voice assistant — stream audio chunks, receive STT + LLM response |
+| `/ws/chat` | Multi-turn chat — JWT auth, session management, persistent history |
+
+#### `/ws/voice` Protocol
+
+1. Connect to `ws://host:8000/ws/voice`
+2. Send audio bytes in chunks
+3. Send text `"END_OF_SPEECH"` when done
+4. Receive JSON: `{"stt": "...", "thinking": "...", "answer": "..."}`
+
+#### `/ws/chat` Protocol
+
+1. Connect to `ws://host:8000/ws/chat`
+2. **Authenticate first**: `{"action": "authenticate", "token": "<JWT>"}`
+3. Send JSON commands:
+
+| Action | Payload | Response |
+|--------|---------|----------|
+| `authenticate` | `token` | `{"action": "authenticated", "username": "..."}` |
+| `create_session` | — | `{"action": "session_created", "session_id": "..."}` |
+| `list_sessions` | — | `{"action": "sessions_list", "sessions": [...]}` |
+| `get_history` | `session_id` | `{"action": "chat_history", "messages": [...]}` |
+| `send_message` | `session_id`, `content` | `{"action": "chat_response", "user_message": {...}, "assistant_message": {...}, "thinking": "..."}` |
+| `delete_session` | `session_id` | `{"action": "session_deleted", "session_id": "..."}` |
+
+### Auto-generated Docs
 
 Once the application is running, visit:
 - **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
@@ -77,32 +119,45 @@ Once the application is running, visit:
 ```text
 backend-rki-1/
 ├── app/
-│   ├── main.py              # FastAPI entry point & lifespan events
-│   ├── api/                 # API Routes (REST and WebSockets)
-│   │   ├── document/        # Document processing endpoints (e.g. ingest.py)
-│   │   └── voice/           # Voice and STT endpoints (e.g. websocket.py)
-│   ├── db/                  # Database connections
-│   │   └── mongodb.py       # MongoDB Motor async client
-│   ├── services/            # Business Logic Layer
-│   │   ├── ingest_service.py # PDF to Markdown, text chunking
-│   │   ├── llm_service.py   # Groq LLM integration
-│   │   └── stt_service.py   # Speech-to-text with Groq Whisper
+│   ├── main.py                # FastAPI entry point & lifespan events
+│   ├── api/                   # API Routes (REST and WebSockets)
+│   │   ├── auth/auth.py       # Registration, login, logout
+│   │   ├── chat/websocket.py  # Multi-turn chat WebSocket
+│   │   ├── document/ingest.py # Document processing endpoints
+│   │   └── voice/websocket.py # Voice/STT WebSocket
+│   ├── db/
+│   │   └── mongodb.py         # MongoDB Motor async client
+│   ├── models/                # Pydantic data models
+│   │   ├── auth.py            # RegisterForm
+│   │   ├── chat.py            # ChatSession, ChatMessage
+│   │   └── user.py            # User
+│   ├── services/              # Business Logic Layer
+│   │   ├── auth_service.py    # JWT auth, password hashing
+│   │   ├── chat_service.py    # Chat session CRUD, LLM orchestration
+│   │   ├── ingest_service.py  # PDF to Markdown, text chunking
+│   │   ├── llm_service.py     # Groq LLM integration
+│   │   └── stt_service.py     # Speech-to-text with Groq Whisper
 │   └── utils/
-│       └── logger.py        # Logging utilities
-├── docker-compose.yaml      # Docker Compose configuration
-├── dockerfile               # Container configuration
-└── requirements.txt         # Python dependencies
+│       ├── logger.py          # Logging utilities
+│       ├── seeder.py          # Admin user seeder
+│       └── test_*.py          # Test scripts
+├── docker-compose.yaml        # Docker Compose configuration
+├── dockerfile                 # Container configuration
+└── requirements.txt           # Python dependencies
 ```
 
 ## Key Components
 
 ### Services
+- **Auth Service** (`auth_service.py`): User registration, password hashing (bcrypt), JWT token management.
+- **Chat Service** (`chat_service.py`): Chat session CRUD, message persistence, multi-turn LLM orchestration with system instructions.
 - **STT Service** (`stt_service.py`): Transcribes audio bytes to text using Groq Whisper.
-- **LLM Service** (`llm_service.py`): Generates responses using Groq's LLMs. 
+- **LLM Service** (`llm_service.py`): Generates responses using Groq's LLMs (single-turn and multi-turn).
 - **Ingest Service** (`ingest_service.py`): Converts PDFs to Markdown format, splits text into chunks, and prepares documents for RAG applications.
 
 ### Database
 - **MongoDB** (`mongodb.py`): Async MongoDB client. Connections are managed through FastAPI's lifespan events in `app/main.py`.
+- **Collections**: `users` (user accounts), `chat_sessions` (chat history with embedded messages).
 
 ## Developer Guide
 
@@ -193,6 +248,24 @@ backend-rki-1/
 **Run the app locally:**
 ```bash
 uvicorn app.main:app --reload
+```
+
+**Run with Docker:**
+```bash
+docker compose up -d --build
+```
+
+**Seed admin user:**
+```bash
+# Local
+python -m app.utils.seeder
+# Docker
+docker exec backend_fastapi python -m app.utils.seeder
+```
+
+**Test chat WebSocket:**
+```bash
+python -m app.utils.test_chat_websocket
 ```
 
 **Run local document ingestion script:**
