@@ -1,4 +1,5 @@
 import os
+import secrets
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta, timezone
@@ -9,12 +10,13 @@ from app.db.mongodb import get_database
 class AuthService:
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
     ALGORITHM = "HS256"
-    ACCESS_TOKEN_EXPIRE_MINUTES = 30
 
     def __init__(self):
         self.SECRET_KEY = os.getenv("SECRET_KEY")
         if not self.SECRET_KEY:
             raise RuntimeError("SECRET_KEY environment variable is not set")
+        self.ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 30))
+        self.REFRESH_TOKEN_EXPIRE_DAYS = int(os.getenv("REFRESH_TOKEN_EXPIRE_DAYS", 7))
 
     def get_password_hash(self, password):
         return self.pwd_context.hash(password)
@@ -49,6 +51,37 @@ class AuthService:
         if not user or not self.verify_password(password, user["hashed_password"]):
             return None
         return user
+
+    async def create_refresh_token(self, username: str) -> str:
+        token = secrets.token_urlsafe(64)
+        expires_at = datetime.now(timezone.utc) + timedelta(days=self.REFRESH_TOKEN_EXPIRE_DAYS)
+        db = get_database()
+        await db.get_collection("refresh_tokens").insert_one({
+            "token": token,
+            "username": username,
+            "expires_at": expires_at,
+            "revoked": False,
+        })
+        return token
+
+    async def refresh_access_token(self, refresh_token: str) -> str:
+        db = get_database()
+        record = await db.get_collection("refresh_tokens").find_one({"token": refresh_token})
+        if not record or record["revoked"]:
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or revoked refresh token")
+        if record["expires_at"].replace(tzinfo=timezone.utc) < datetime.now(timezone.utc):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token expired")
+        return self.create_access_token(
+            data={"sub": record["username"]},
+            expires_delta=timedelta(minutes=self.ACCESS_TOKEN_EXPIRE_MINUTES),
+        )
+
+    async def revoke_refresh_token(self, refresh_token: str):
+        db = get_database()
+        await db.get_collection("refresh_tokens").update_one(
+            {"token": refresh_token},
+            {"$set": {"revoked": True}},
+        )
 
     async def get_current_user(self, token: str):
         credentials_exception = HTTPException(
