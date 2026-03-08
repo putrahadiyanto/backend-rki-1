@@ -8,6 +8,7 @@ from app.api.voice.websocket import router as voice_router
 from app.api.document.ingest import router as ingest_router
 from app.api.auth.auth import router as auth_router
 from app.db.mongodb import db, connect, disconnect
+from app.utils.seeder import seed_admin
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -18,6 +19,9 @@ async def lifespan(app: FastAPI):
     await connect(uri)
     # Store the database manager in app.state for standard access
     app.state.db = db
+
+    # Run seeder to ensure admin user exists
+    await seed_admin()
     
     yield
 
