@@ -6,4 +6,6 @@ motor == 3.7.1
 pydantic-settings == 2.13.1
 markitdown[all] == 0.1.5
 langchain-text-splitters == 1.1.1
-dotenv
+python-dotenv
+passlib[bcrypt]
+python-jose[cryptography]
