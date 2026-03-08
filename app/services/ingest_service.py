@@ -5,11 +5,11 @@ from datetime import datetime
 from app.utils.logger import get_logger
 from langchain_text_splitters import MarkdownTextSplitter
 from app.db.mongodb import get_database
-import voyageai
+# import voyageai
 
 
 logger = get_logger()
-vo = voyageai.Client() # Automatically uses VOYAGE_API_KEY from environment
+# vo = voyageai.Client() # Automatically uses VOYAGE_API_KEY from environment
 
 def convert_pdf_to_markdown(source: Any) -> str:
     """
@@ -46,7 +46,7 @@ async def store_markdown_chunks(markdown_content: str, source_name: str, metadat
     logger.info(f"Split {source_name} into {len(chunks)} chunks")
 
     # Generate embeddings using Voyage AI
-    result = vo.embed(chunks, model="voyage-4-lite", input_type="document")
+    # result = vo.embed(chunks, model="voyage-4-lite", input_type="document")
     embeddings = result.embeddings
 
 
