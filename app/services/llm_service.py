@@ -1,7 +1,9 @@
 import os
-from groq import AsyncGroq
+from dotenv import load_dotenv
 import re
+from groq import AsyncGroq
 
+load_dotenv(override=True)
 groq = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))  
 
 async def generate_response(prompt: str) -> dict:
