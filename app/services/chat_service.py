@@ -14,6 +14,14 @@ class ChatService:
     # Max recent messages sent as LLM context to keep token usage reasonable
     MAX_CONTEXT_MESSAGES = 20
 
+    SYSTEM_PROMPT = (
+        "Anda adalah asisten edukasi medis yang menjelaskan fungsi organ tubuh manusia "
+        "kepada penyandang tunarungu. Jawaban Anda akan diubah menjadi teks yang ditampilkan "
+        "secara visual, jadi gunakan bahasa Indonesia yang sederhana, jelas, dan mudah dipahami. "
+        "Hindari istilah medis yang rumit kecuali disertai penjelasan singkat. "
+        "Berikan jawaban yang ringkas dan informatif."
+    )
+
     def _col(self):
         return get_database().get_collection(self.COLLECTION)
 
@@ -94,7 +102,8 @@ class ChatService:
             raise ValueError("Session not found")
 
         recent = session["messages"][-self.MAX_CONTEXT_MESSAGES :]
-        llm_messages = [{"role": m["role"], "content": m["content"]} for m in recent]
+        llm_messages = [{"role": "system", "content": self.SYSTEM_PROMPT}]
+        llm_messages += [{"role": m["role"], "content": m["content"]} for m in recent]
 
         # 3. Call the LLM
         result = await generate_chat_response(llm_messages)
