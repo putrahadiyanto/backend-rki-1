@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from app.db.mongodb import get_database
 from app.models.chat import ChatSession, ChatMessage
-from app.services.llm_service import generate_chat_response
+from app.services.llm_service import generate_response
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -13,14 +13,6 @@ class ChatService:
     COLLECTION = "chat_sessions"
     # Max recent messages sent as LLM context to keep token usage reasonable
     MAX_CONTEXT_MESSAGES = 20
-
-    SYSTEM_PROMPT = (
-        "Anda adalah asisten edukasi medis yang menjelaskan fungsi organ tubuh manusia "
-        "kepada penyandang tunarungu. Jawaban Anda akan diubah menjadi teks yang ditampilkan "
-        "secara visual, jadi gunakan bahasa Indonesia yang sederhana, jelas, dan mudah dipahami. "
-        "Hindari istilah medis yang rumit kecuali disertai penjelasan singkat. "
-        "Berikan jawaban yang ringkas dan informatif."
-    )
 
     def _col(self):
         return get_database().get_collection(self.COLLECTION)
@@ -96,25 +88,28 @@ class ChatService:
         # 1. Store user message
         user_msg = await self.add_message(session_id, username, "user", user_prompt)
 
-        # 2. Build LLM context from recent messages
+        # 2. Build context from recent history (excluding the message just added)
         session = await self.get_session(session_id, username)
-        if not session:
-            raise ValueError("Session not found")
+        history: list[dict] = []
+        if session:
+            all_messages = session.get("messages", [])
+            # Exclude the last message (the one we just stored) and limit context
+            prior = all_messages[:-1]
+            recent = prior[-self.MAX_CONTEXT_MESSAGES:]
+            history = [{"role": m["role"], "content": m["content"]} for m in recent]
 
-        recent = session["messages"][-self.MAX_CONTEXT_MESSAGES :]
-        llm_messages = [{"role": "system", "content": self.SYSTEM_PROMPT}]
-        llm_messages += [{"role": m["role"], "content": m["content"]} for m in recent]
-
-        # 3. Call the LLM
-        result = await generate_chat_response(llm_messages)
+        # 3. Call the LLM with history
+        result = await generate_response(user_prompt, history)
 
         # 4. Store assistant reply
         assistant_msg = await self.add_message(
             session_id, username, "assistant", result["answer"]
         )
 
+        extra = {"action": result["action"], "game_data": result["game_data"]} if "game_data" in result else {}
         return {
             "user_message": user_msg.model_dump(),
             "assistant_message": assistant_msg.model_dump(),
-            "thinking": result["thoughts"],
+            "thoughts": result.get("thoughts", ""),
+            **extra,
         }

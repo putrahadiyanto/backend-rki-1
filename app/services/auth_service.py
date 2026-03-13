@@ -84,21 +84,14 @@ class AuthService:
         )
 
     async def get_current_user(self, token: str):
-        credentials_exception = HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
         try:
             payload = jwt.decode(token, self.SECRET_KEY, algorithms=[self.ALGORITHM])
             username: str = payload.get("sub")
             if username is None:
-                raise credentials_exception
+                return None
         except JWTError:
-            raise credentials_exception
+            return None
         db = get_database()
         users_collection = db.get_collection("users")
         user = await users_collection.find_one({"username": username})
-        if user is None:
-            raise credentials_exception
         return user

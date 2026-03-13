@@ -142,3 +142,10 @@ async def chat_websocket(websocket: WebSocket):
 
     except WebSocketDisconnect:
         logger.info(f"Chat WS disconnected: {authenticated_user or 'unauthenticated'}")
+    except Exception as e:
+        logger.error(f"Unexpected error in chat websocket: {e}")
+        try:
+            await websocket.send_json({"error": "An unexpected server error occurred."})
+            await websocket.close()
+        except Exception:
+            pass
