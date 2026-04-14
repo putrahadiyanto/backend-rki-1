@@ -25,8 +25,8 @@ import httpx
 
 # --- Configuration -----------------------------------------------------------
 # Get the backend URL from environment variables, with a default
-SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
-WS_URL = os.getenv("WS_URL", "ws://localhost:8000")
+SERVER_URL = os.getenv("SERVER_URL", "http://43.157.235.115:8000")
+WS_URL = os.getenv("WS_URL", "ws://43.157.235.115:8000")
 TOKEN_FILE = ".chattest_token"
 
 # --- Credentials for fetching a new token ------------------------------------
@@ -137,17 +137,25 @@ async def main():
 
 
             # Create a new chat session
-            print("\n[Step 2] Creating a new chat session...")
-            await websocket.send(json.dumps({"action": "create_session"}))
-            session_response = await websocket.recv()
-            print(f"<<< SESSION: {session_response}")
-
-            session_data = json.loads(session_response)
-            session_id = session_data.get("session_id")
-            if not session_id:
-                print("Failed to create session. Exiting.")
-                return
-            print(f"--- Session created: {session_id} ---")
+            # Create a new chat session via HTTP POST /sessions
+            print("\n[Step 2] Creating a new chat session via HTTP API...")
+            async with httpx.AsyncClient() as client:
+                try:
+                    resp = await client.post(
+                        f"{SERVER_URL}/sessions",
+                        headers={"Authorization": f"Bearer {token}"},
+                        timeout=10.0,
+                    )
+                    resp.raise_for_status()
+                    body = resp.json()
+                    session_id = body.get("session_id")
+                    if not session_id:
+                        print(f"Failed to create session: unexpected response {body}")
+                        return
+                    print(f"--- Session created: {session_id} ---")
+                except Exception as e:
+                    print(f"Failed to create session via HTTP: {e}")
+                    return
 
 
             # Chat loop

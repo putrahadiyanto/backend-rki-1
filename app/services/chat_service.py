@@ -1,4 +1,7 @@
 from datetime import datetime, timezone
+import os
+import asyncio
+from typing import Dict
 from app.db.mongodb import get_database
 from app.models.chat import ChatSession, ChatMessage
 from app.services.llm_service import generate_response
@@ -17,6 +20,20 @@ class ChatService:
 
     def _col(self):
         return get_database().get_collection(self.COLLECTION)
+
+    def __init__(self):
+        # Per-session in-memory locks to serialize operations for the same session
+        self._session_locks: Dict[str, asyncio.Lock] = {}
+        # Semaphore to limit concurrent LLM calls across the service
+        max_concurrency = int(os.getenv("LLM_MAX_CONCURRENCY"))
+        self._llm_semaphore = asyncio.Semaphore(max_concurrency)
+
+    async def _get_lock(self, session_id: str) -> asyncio.Lock:
+        lock = self._session_locks.get(session_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._session_locks[session_id] = lock
+        return lock
 
     # ── Session CRUD ─────────────────────────────────────────────
 
@@ -86,31 +103,36 @@ class ChatService:
         4. Store the assistant reply
         5. Return both messages
         """
-        # 1. Store user message
-        user_msg = await self.add_message(session_id, username, "user", user_prompt)
+        # Use a per-session lock so concurrent requests targeting the same
+        # session are serialized and cannot race the read-modify-write steps.
+        lock = await self._get_lock(session_id)
+        async with lock:
+            # 1. Store user message
+            user_msg = await self.add_message(session_id, username, "user", user_prompt)
 
-        # 2. Build context from recent history (excluding the message just added)
-        session = await self.get_session(session_id, username)
-        history: list[dict] = []
-        if session:
-            all_messages = session.get("messages", [])
-            # Exclude the last message (the one we just stored) and limit context
-            prior = all_messages[:-1]
-            recent = prior[-self.MAX_CONTEXT_MESSAGES:]
-            history = [{"role": m["role"], "content": m["content"]} for m in recent]
+            # 2. Build context from recent history (excluding the message just added)
+            session = await self.get_session(session_id, username)
+            history: list[dict] = []
+            if session:
+                all_messages = session.get("messages", [])
+                # Exclude the last message (the one we just stored) and limit context
+                prior = all_messages[:-1]
+                recent = prior[-self.MAX_CONTEXT_MESSAGES:]
+                history = [{"role": m["role"], "content": m["content"]} for m in recent]
 
-        # 3. Call the LLM with history
-        result = await generate_response(user_prompt, history)
+            # 3. Call the LLM with history, but limit global concurrent LLM calls
+            async with self._llm_semaphore:
+                result = await generate_response(user_prompt, history)
 
-        # 4. Store assistant reply
-        assistant_msg = await self.add_message(
-            session_id, username, "assistant", result["answer"]
-        )
+            # 4. Store assistant reply
+            assistant_msg = await self.add_message(
+                session_id, username, "assistant", result["answer"]
+            )
 
-        extra = {"action": result["action"], "game_data": result["game_data"]} if "game_data" in result else {}
+        extra = {"action": result.get("action"), "game_data": result.get("game_data")} if result else {}
         return {
             "user_message": user_msg.model_dump(),
             "assistant_message": assistant_msg.model_dump(),
-            "thoughts": result.get("thoughts", ""),
+            "thoughts": result.get("thoughts", "") if result else "",
             **extra,
         }

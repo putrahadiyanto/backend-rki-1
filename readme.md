@@ -1,275 +1,217 @@
-# Backend RKI-1
+# Backend API — Frontend Integration Guide
 
-A FastAPI-based backend service integrating speech-to-text, LLM capabilities, document processing, and multi-turn chat for intelligent conversational applications.
+This document describes the HTTP and WebSocket APIs exposed by the backend, authentication flow, message formats, examples (curl / JS), and operational notes for frontend engineers.
 
-## Features
+**Base URL**
+- Local development (default): `http://localhost:8000`
+- WebSocket base: `ws://localhost:8000/ws/chat`
 
-- **FastAPI Framework**: Async web framework with automatic API documentation (Swagger/ReDoc).
-- **MongoDB Integration**: Async MongoDB client (Motor) with connection lifecycle management.
-- **Speech-to-Text (STT)**: Audio transcription using Groq's Whisper model (whisper-large-v3-turbo).
-- **LLM Integration**: Text generation, thinking/answer separation using Groq's language models.
-- **Multi-turn Chat**: WebSocket-based chat with persistent session history in MongoDB.
-- **Authentication**: JWT-based user registration, login, and token management.
-- **Document Processing**: PDF to Markdown conversion and text chunking (for RAG).
-- **Containerization**: Docker support for easy building and deployment.
+**Quick start (run locally without Docker)**
+1. Create a Python virtual environment and activate it:
 
-## Prerequisites
-
-- Python 3.8+
-- MongoDB
-- Docker (optional, for containerized deployment)
-- Groq API key
-
-## Installation
-
-### Local Setup
-
-1. **Clone the repository**
-   ```bash
-   git clone <repository-url>
-   cd backend-rki-1
-   ```
-
-2. **Create a virtual environment**
-   ```bash
-   python -m venv venv
-   # On macOS/Linux
-   source venv/bin/activate
-   # On Windows
-   venv\Scripts\activate
-   ```
-
-3. **Install dependencies**
-   ```bash
-   pip install -r requirements.txt
-   ```
-
-4. **Configure environment variables**
-   ```bash
-   cp .env.example .env
-   ```
-   
-   Edit `.env` and configure the following variables:
-   ```env
-   GROQ_API_KEY=your_groq_api_key_here
-   MONGO_URI=mongodb://localhost:27017
-   MONGO_DB_NAME=your_database_name
-   ```
-
-5. **Run the application**
-   ```bash
-   uvicorn app.main:app --reload
-   ```
-
-### Docker Setup
-
-1. **Build and run with Docker Compose**
-   ```bash
-   docker-compose up --build
-   ```
-
-## Endpoints
-
-### REST API
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | Health check |
-| `POST` | `/auth/register` | Register a new user (`username`, `email`, `password`) |
-| `POST` | `/auth/token` | Login and receive a JWT access token |
-| `POST` | `/auth/logout` | Logout (client-side token invalidation) |
-
-### WebSocket
-
-| Path | Description |
-|------|-------------|
-| `/ws/voice` | Voice assistant — stream audio chunks, receive STT + LLM response |
-| `/ws/chat` | Multi-turn chat — JWT auth, session management, persistent history |
-
-#### `/ws/voice` Protocol
-
-1. Connect to `ws://host:8000/ws/voice`
-2. Send audio bytes in chunks
-3. Send text `"END_OF_SPEECH"` when done
-4. Receive JSON: `{"stt": "...", "thinking": "...", "answer": "..."}`
-
-#### `/ws/chat` Protocol
-
-1. Connect to `ws://host:8000/ws/chat`
-2. **Authenticate first**: `{"action": "authenticate", "token": "<JWT>"}`
-3. Send JSON commands:
-
-| Action | Payload | Response |
-|--------|---------|----------|
-| `authenticate` | `token` | `{"action": "authenticated", "username": "..."}` |
-| `create_session` | — | `{"action": "session_created", "session_id": "..."}` |
-| `list_sessions` | — | `{"action": "sessions_list", "sessions": [...]}` |
-| `get_history` | `session_id` | `{"action": "chat_history", "messages": [...]}` |
-| `send_message` | `session_id`, `content` | `{"action": "chat_response", "user_message": {...}, "assistant_message": {...}, "thinking": "..."}` |
-| `delete_session` | `session_id` | `{"action": "session_deleted", "session_id": "..."}` |
-
-### Auto-generated Docs
-
-Once the application is running, visit:
-- **Swagger UI**: [http://localhost:8000/docs](http://localhost:8000/docs)
-- **ReDoc**: [http://localhost:8000/redoc](http://localhost:8000/redoc)
-
-## Project Structure
-
-```text
-backend-rki-1/
-├── app/
-│   ├── main.py                # FastAPI entry point & lifespan events
-│   ├── api/                   # API Routes (REST and WebSockets)
-│   │   ├── auth/auth.py       # Registration, login, logout
-│   │   ├── chat/websocket.py  # Multi-turn chat WebSocket
-│   │   ├── document/ingest.py # Document processing endpoints
-│   │   └── voice/websocket.py # Voice/STT WebSocket
-│   ├── db/
-│   │   └── mongodb.py         # MongoDB Motor async client
-│   ├── models/                # Pydantic data models
-│   │   ├── auth.py            # RegisterForm
-│   │   ├── chat.py            # ChatSession, ChatMessage
-│   │   └── user.py            # User
-│   ├── services/              # Business Logic Layer
-│   │   ├── auth_service.py    # JWT auth, password hashing
-│   │   ├── chat_service.py    # Chat session CRUD, LLM orchestration
-│   │   ├── ingest_service.py  # PDF to Markdown, text chunking
-│   │   ├── llm_service.py     # Groq LLM integration
-│   │   └── stt_service.py     # Speech-to-text with Groq Whisper
-│   └── utils/
-│       ├── logger.py          # Logging utilities
-│       ├── seeder.py          # Admin user seeder
-│       └── test_*.py          # Test scripts
-├── docker-compose.yaml        # Docker Compose configuration
-├── dockerfile                 # Container configuration
-└── requirements.txt           # Python dependencies
-```
-
-## Key Components
-
-### Services
-- **Auth Service** (`auth_service.py`): User registration, password hashing (bcrypt), JWT token management.
-- **Chat Service** (`chat_service.py`): Chat session CRUD, message persistence, multi-turn LLM orchestration with system instructions.
-- **STT Service** (`stt_service.py`): Transcribes audio bytes to text using Groq Whisper.
-- **LLM Service** (`llm_service.py`): Generates responses using Groq's LLMs (single-turn and multi-turn).
-- **Ingest Service** (`ingest_service.py`): Converts PDFs to Markdown format, splits text into chunks, and prepares documents for RAG applications.
-
-### Database
-- **MongoDB** (`mongodb.py`): Async MongoDB client. Connections are managed through FastAPI's lifespan events in `app/main.py`.
-- **Collections**: `users` (user accounts), `chat_sessions` (chat history with embedded messages).
-
-## Developer Guide
-
-### Adding a new REST API Endpoint
-
-1. **Create the Route File**
-   Create a new Python file in the appropriate directory (e.g., `app/api/your_feature/routes.py`).
-
-2. **Define the APIRouter and Endpoint**
-   ```python
-   # app/api/your_feature/routes.py
-   from fastapi import APIRouter, HTTPException
-   from pydantic import BaseModel
-
-   router = APIRouter()
-
-   class ItemRequest(BaseModel):
-       name: str
-       description: str
-
-   @router.post("/items")
-   async def create_item(item: ItemRequest):
-       try:
-           # Call a service from app.services
-           return {"message": f"Item {item.name} created successfully"}
-       except Exception as e:
-           raise HTTPException(status_code=500, detail=str(e))
-   ```
-
-3. **Register the Router in `app/main.py`**
-   ```python
-   # app/main.py
-   from fastapi import FastAPI
-   from app.api.your_feature.routes import router as your_feature_router
-   
-   app = FastAPI(...)
-
-   # Include your new router
-   app.include_router(your_feature_router, prefix="/api/v1/feature", tags=["FeatureName"])
-   ```
-
-### Adding a new WebSocket Endpoint
-
-1. **Create the Route File**
-   Create a new Python file in the appropriate directory (e.g., `app/api/your_feature/websocket.py`).
-
-2. **Define the APIRouter and WebSocket Endpoint**
-   ```python
-   # app/api/your_feature/websocket.py
-   from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-   import logging
-
-   router = APIRouter()
-   logger = logging.getLogger(__name__)
-
-   @router.websocket("/ws/feature")
-   async def feature_websocket(websocket: WebSocket):
-       await websocket.accept()
-       try:
-           while True:
-               # Receive message from client
-               message = await websocket.receive_text()
-               
-               # Process message and send response
-               response = f"Processed: {message}"
-               await websocket.send_text(response)
-       except WebSocketDisconnect:
-           logger.info("Client disconnected from /ws/feature")
-       except Exception as e:
-           logger.error(f"WebSocket error: {e}")
-           await websocket.close()
-   ```
-
-3. **Register the Router in `app/main.py`**
-   ```python
-   # app/main.py
-   from fastapi import FastAPI
-   from app.api.your_feature.websocket import router as your_ws_router
-   
-   app = FastAPI(...)
-
-   # Include your new websocket router
-   app.include_router(your_ws_router)
-   ```
-
-## Development Commands
-
-**Run the app locally:**
 ```bash
-uvicorn app.main:app --reload
+python -m venv .venv
+# Windows
+.venv\Scripts\activate
+# macOS / Linux
+source .venv/bin/activate
 ```
 
-**Run with Docker:**
+2. Install dependencies:
+
 ```bash
-docker compose up -d --build
+pip install -r requirements.txt
 ```
 
-**Seed admin user:**
-```bash
-# Local
-python -m app.utils.seeder
-# Docker
-docker exec backend_fastapi python -m app.utils.seeder
+3. Create a `.env` file in the `backend` folder (or set env vars in your shell). Required environment variables (example values):
+
+```
+SECRET_KEY=changeme123
+MONGO_URI=mongodb://localhost:27017
+MONGO_DB_NAME=rki_db
+GROQ_API_KEY=<your_groq_api_key>
+LLM_MAX_CONCURRENCY=5
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+REFRESH_TOKEN_EXPIRE_DAYS=7
 ```
 
-**Test chat WebSocket:**
+4. Start the server:
+
 ```bash
-python -m app.utils.test_chat_websocket
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
 ```
 
-**Run local document ingestion script:**
-```bash
-python -m app.services.ingest_service
+OpenAPI docs will be available at `http://localhost:8000/docs`.
+
+**Authentication Flow**
+- Login (OAuth2 password grant via `/auth/token`) returns `access_token` (JWT) and `refresh_token`.
+- Use `Authorization: Bearer <access_token>` header for protected HTTP endpoints.
+- For WebSocket, after opening the socket, send an `authenticate` action with `token` field containing the `access_token`.
+- When access token expires, call `/auth/refresh` with the `refresh_token` to obtain a new `access_token`.
+
+---
+
+**HTTP API Endpoints**
+
+All endpoints below are mounted on the app root unless otherwise specified. See `app/api/*` for server code.
+
+**Auth** (`/auth`)
+- POST `/auth/register` — register new user
+   - Body: `{ "username": "string", "email": "string", "password": "string" }`
+   - Response: `{ "message": "User registered successfully" }`
+
+- POST `/auth/token` — login (OAuth2 password grant)
+   - Form fields: `username`, `password` (application/x-www-form-urlencoded)
+   - Response: `{ "access_token": "<jwt>", "refresh_token": "<refresh>", "token_type": "bearer" }`
+
+- POST `/auth/refresh` — refresh access token
+   - Body: `{ "refresh_token": "string" }`
+   - Response: `{ "access_token": "<jwt>", "token_type": "bearer" }`
+
+- POST `/auth/logout` — revoke refresh token
+   - Body: `{ "refresh_token": "string" }`
+   - Response: `{ "message": "Successfully logged out" }`
+
+**Chat session management**
+- GET `/sessions` — list sessions (protected)
+   - Header: `Authorization: Bearer <access_token>`
+   - Response: array of session objects (summary fields: `session_id`, `title`, `created_at`, `updated_at`).
+
+- POST `/sessions` — create a new session (protected)
+   - Header: `Authorization: Bearer <access_token>`
+   - Body: none
+   - Response: `{ "session_id": "<uuid>" }`
+
+- GET `/sessions/{session_id}/history` — get full session messages (protected)
+   - Header: `Authorization: Bearer <access_token>`
+   - Response: `{ "session_id": "<uuid>", "messages": [ { role, content, timestamp }, ... ] }`
+   - Errors: 404 if session not found or not owned by the authenticated user.
+
+- DELETE `/sessions/{session_id}` — delete session (protected)
+   - Header: `Authorization: Bearer <access_token>`
+   - Response: `{ "deleted": true, "session_id": "<uuid>" }`
+
+---
+
+**WebSocket: Realtime chat**
+
+- URL: `ws://<host>:<port>/ws/chat`
+- Message format: text frames containing JSON objects.
+- All messages are JSON objects with at minimum an `action` field; additional fields depend on the action.
+
+Supported actions (client -> server):
+
+1. Authenticate (must be sent first)
+```json
+{ "action": "authenticate", "token": "<access_token>" }
 ```
-*(Ensure PDF files are placed in the `./data/pdf/` directory.)*
+- Success response:
+```json
+{ "action": "authenticated", "username": "<username>" }
+```
+- Failure: `{ "error": "Invalid or expired token" }`
+
+2. Send message (prompt the LLM and store messages)
+```json
+{ "action": "send_message", "session_id": "<uuid>", "content": "User question or prompt" }
+```
+- Server behavior: validates inputs, stores the user message, builds recent context, calls the LLM, stores assistant reply, and returns a `chat_response` message.
+- Successful response example:
+```json
+{
+   "action": "chat_response",
+   "session_id": "<uuid>",
+   "user_message": { "role": "user", "content": "...", "timestamp": "..." },
+   "assistant_message": { "role": "assistant", "content": "...", "timestamp": "..." },
+   "thoughts": "optional internal thoughts",
+   "action": "trigger_minigame",     // optional LLM-invoked tool
+   "game_data": { /* optional tool payload */ }
+}
+```
+
+3. Ping
+```json
+{ "action": "ping" }
+```
+- Server replies: `{ "action": "pong" }`
+
+4. Errors / unknown actions
+- Server replies with `{ "error": "<message>", "available_actions": [ ... ] }`.
+
+**WebSocket auth note**: The WebSocket uses an explicit `authenticate` action with the token. The server maintains `authenticated_user` per connection. If client sends other actions before authentication, the server responds with an error asking to authenticate first.
+
+---
+
+**Data shapes**
+- `ChatMessage`:
+   - `{ "role": "user"|"assistant", "content": "string", "timestamp": "ISO-8601 string" }`
+- `ChatSession`:
+   - `{ "session_id": "uuid", "username": "string", "title": "optional", "messages": [ChatMessage], "created_at": "ISO", "updated_at": "ISO" }`
+
+---
+
+**Client examples**
+
+Login (curl):
+```bash
+curl -X POST \
+   -d "username=alice&password=secret" \
+   http://localhost:8000/auth/token
+```
+
+Create session (fetch):
+```js
+await fetch('http://localhost:8000/sessions', {
+   method: 'POST',
+   headers: { 'Authorization': 'Bearer ' + access_token }
+});
+```
+
+WebSocket example (browser JS):
+```js
+const ws = new WebSocket('ws://localhost:8000/ws/chat');
+ws.onopen = () => {
+   ws.send(JSON.stringify({ action: 'authenticate', token: ACCESS_TOKEN }));
+   // then send a message
+   ws.send(JSON.stringify({ action: 'send_message', session_id: SESSION_ID, content: 'Halo!' }));
+};
+ws.onmessage = (ev) => {
+   const msg = JSON.parse(ev.data);
+   console.log('recv', msg);
+};
+```
+
+---
+
+**Operational notes for frontend**
+
+- Token handling: store `access_token` (short-lived) and `refresh_token` (longer-lived). When requests return 401, try `/auth/refresh` with `refresh_token` to get a new `access_token`.
+- WebSocket: authenticate immediately after open. The connection is tied to the authenticated user for the lifetime of the socket.
+- Concurrency: the backend serializes operations per `session_id` (in-process async locks) and caps concurrent LLM calls globally with an environment-driven semaphore `LLM_MAX_CONCURRENCY` (default `5`).
+   - Result: multiple `send_message` calls against the same `session_id` are processed sequentially. Many concurrent messages across different sessions may be limited by the LLM concurrency cap and therefore may queue briefly.
+- Timeouts / keepalives: the app supports an application-level `ping` action. There is no enforced app-side idle timeout by default (the server or reverse proxy might close idle sockets). Consider periodically sending `ping` from the client if necessary.
+- Error handling: display server `error` objects to the user as friendly messages. If LLM errors occur, the message returned will include a fallback answer or an error field.
+
+---
+
+**Environment variables of interest**
+- `SECRET_KEY` — required for JWT signing
+- `MONGO_URI` — connection string to MongoDB
+- `MONGO_DB_NAME` — database name
+- `GROQ_API_KEY` — key for the LLM provider
+- `LLM_MAX_CONCURRENCY` — integer limit for simultaneous LLM calls
+- `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS`
+
+---
+
+**Notes for integration testing**
+- Start a local MongoDB (or use a test DB) before launching the server.
+- Use `--reload` for development but use `uvicorn` single worker for local testing of in-process session locks. For multi-worker production, per-session in-memory locks do not synchronize across workers (use Redis locks if you plan to run multiple workers).
+
+---
+
+If you want, I can:
+- Add this README into the repository (it is saved at `backend/README.md`).
+- Generate a condensed `API.md` or `openapi` examples for the frontend.
+
+Tell me if you'd like the README saved in a different location or want additional example flows (e.g., refresh-token implementation in frontend code).
