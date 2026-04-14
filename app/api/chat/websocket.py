@@ -57,40 +57,6 @@ async def chat_websocket(websocket: WebSocket):
                 })
                 continue
 
-            # ── Create session ───────────────────────────────────
-            if action == "create_session":
-                session_id = await chat_service.create_session(authenticated_user)
-                await websocket.send_json({
-                    "action": "session_created",
-                    "session_id": session_id,
-                })
-
-            # ── List sessions ────────────────────────────────────
-            elif action == "list_sessions":
-                sessions = await chat_service.get_sessions(authenticated_user)
-                await websocket.send_json({
-                    "action": "sessions_list",
-                    "sessions": json.loads(json.dumps(sessions, default=_serialize)),
-                })
-
-            # ── Get chat history ─────────────────────────────────
-            elif action == "get_history":
-                session_id = data.get("session_id")
-                if not session_id:
-                    await websocket.send_json({"error": "session_id is required"})
-                    continue
-
-                session = await chat_service.get_session(session_id, authenticated_user)
-                if not session:
-                    await websocket.send_json({"error": "Session not found"})
-                    continue
-
-                await websocket.send_json({
-                    "action": "chat_history",
-                    "session_id": session_id,
-                    "messages": json.loads(json.dumps(session.get("messages", []), default=_serialize)),
-                })
-
             # ── Send message (prompt LLM) ────────────────────────
             elif action == "send_message":
                 session_id = data.get("session_id")
@@ -114,29 +80,16 @@ async def chat_websocket(websocket: WebSocket):
                     logger.error(f"Error in send_message: {e}")
                     await websocket.send_json({"error": "Internal server error"})
 
-            # ── Delete session ───────────────────────────────────
-            elif action == "delete_session":
-                session_id = data.get("session_id")
-                if not session_id:
-                    await websocket.send_json({"error": "session_id is required"})
-                    continue
-
-                deleted = await chat_service.delete_session(session_id, authenticated_user)
-                if deleted:
-                    await websocket.send_json({
-                        "action": "session_deleted",
-                        "session_id": session_id,
-                    })
-                else:
-                    await websocket.send_json({"error": "Session not found"})
+            elif action == "ping":
+                await websocket.send_json({"action": "pong"})
+                continue
 
             # ── Unknown action ───────────────────────────────────
             else:
                 await websocket.send_json({
                     "error": f"Unknown action: {action}",
                     "available_actions": [
-                        "authenticate", "create_session", "list_sessions",
-                        "get_history", "send_message", "delete_session",
+                        "authenticate", "send_message", "ping",
                     ],
                 })
 

@@ -53,7 +53,7 @@ async def generate_response(prompt: str, history: list[dict] | None = None) -> d
 
         "ATURAN FORMAT (wajib untuk TTS):\n"
         "Tulis hanya kalimat natural seperti orang berbicara. Jangan pakai bullet points, tanda bintang, tanda pagar, "
-        "atau simbol apapun. Jangan pakai format markdown sama sekali. Kalau perlu menyebutkan beberapa hal, "
+        "simbol atau emoji apapun. Jangan pakai format markdown sama sekali. Kalau perlu menyebutkan beberapa hal, "
         "gunakan kata penghubung seperti 'pertama... lalu... selanjutnya...'. "
         "Gunakan Bahasa Indonesia yang santai dan mudah dimengerti. "
         "Kalau ada istilah medis, jelaskan langsung artinya dalam kalimat yang sama. "

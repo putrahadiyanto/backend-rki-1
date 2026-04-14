@@ -3,7 +3,8 @@ import secrets
 from passlib.context import CryptContext
 from jose import JWTError, jwt
 from datetime import datetime, timedelta, timezone
-from fastapi import HTTPException, status
+from fastapi import HTTPException, status, Depends
+from fastapi.security import OAuth2PasswordBearer
 from app.models.user import User
 from app.db.mongodb import get_database
 
@@ -95,3 +96,14 @@ class AuthService:
         users_collection = db.get_collection("users")
         user = await users_collection.find_one({"username": username})
         return user
+
+    oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token")
+
+    async def get_authenticated_username(self, token: str = Depends(oauth2_scheme)) -> str:
+        """FastAPI dependency: validate OAuth2 Bearer token and return the username."""
+        if not token:
+            raise HTTPException(status_code=401, detail="Missing token")
+        user = await self.get_current_user(token)
+        if not user:
+            raise HTTPException(status_code=401, detail="Invalid or expired token")
+        return user["username"]

@@ -1,3 +1,8 @@
+# ===========================================
+# Currently not used, used for the index on the ingest service to VectorDB (RAG)
+# If later on, there will be implementation of RAG, you can use this
+# ===========================================
+
 from markitdown import MarkItDown
 import io
 from typing import BinaryIO, Union, Any

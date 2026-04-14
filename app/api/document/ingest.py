@@ -1,3 +1,8 @@
+# ===========================================
+# Currently not used, used for the index on the ingest service (RAG)
+# If later on, there will be implementation of RAG, you can use this
+# ===========================================
+
 from fastapi import APIRouter, File, UploadFile, Depends, HTTPException
 from app.services.ingest_service import ingest_pdf
 from app.utils.logger import get_logger

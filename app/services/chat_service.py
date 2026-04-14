@@ -11,6 +11,7 @@ class ChatService:
     """Manages chat sessions and messages in MongoDB."""
 
     COLLECTION = "chat_sessions"
+    
     # Max recent messages sent as LLM context to keep token usage reasonable
     MAX_CONTEXT_MESSAGES = 20
 

@@ -1,3 +1,8 @@
+# ===========================================
+# Currently not used, used for the index on the ingest service (RAG)
+# If later on, there will be implementation of RAG, you can use this
+# ===========================================
+
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import os
