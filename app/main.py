@@ -4,10 +4,8 @@ load_dotenv(override=True)
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
 import os
-from app.api.voice.websocket import router as voice_router
 from app.api.auth.auth import router as auth_router
 from app.api.chat.websocket import router as chat_router
-from app.api.chat.manage_chat import router as manage_chat_router
 from app.api.chat.manage_chat import router as crud_chat
 from app.db.mongodb import db, connect, disconnect
 from app.utils.seeder import seed_admin
@@ -41,7 +39,6 @@ app = FastAPI(
 app.include_router(auth_router, prefix="/auth", tags=["auth"])
 app.include_router(chat_router)
 # include HTTP session management endpoints
-app.include_router(manage_chat_router)
 app.include_router(crud_chat, prefix="/chat", tags=["chat"])
 # app.include_router(ingest_router)
 

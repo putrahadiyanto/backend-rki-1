@@ -142,7 +142,7 @@ async def main():
             async with httpx.AsyncClient() as client:
                 try:
                     resp = await client.post(
-                        f"{SERVER_URL}/sessions",
+                        f"{SERVER_URL}/chat/sessions",
                         headers={"Authorization": f"Bearer {token}"},
                         timeout=10.0,
                     )
