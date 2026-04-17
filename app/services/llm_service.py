@@ -1,56 +1,31 @@
-import os
 from dotenv import load_dotenv
-import re
-import json
+from typing import List, Dict, Any
+
+from pydantic import BaseModel, Field
 import asyncio
-from groq import AsyncGroq
 
-load_dotenv(override=True)
+from langchain.tools import tool
+from langchain_groq import ChatGroq
+from langchain.messages import AIMessage, HumanMessage, SystemMessage
 
-TOOLS = [
-    {
-        "type": "function",
-        "function": {
-            "name" : "trigger_minigame",
-            "parameters" : {
-                "type" : "object",
-                "properties" : {
-                    "topic" : {"type" : "string"},
-                    "message" : {"type" : "string"},
-                    "questions" : {
-                        "type" : "array",
-                        "items" : {
-                            "type" : "object",
-                            "properties" : {
-                                "question_text" : {"type" : "string"},
-                                "answer_options" : {
-                                    "type" : "array",
-                                    "items" : {"type" : "string"},
-                                    "minItems" : 4,
-                                    "maxItems" : 4,
-                                },  
-                                'correct_answer_index' : {"type" : "integer", "minimum" : 0, "maximum" : 3}
-                            },
-                            "required" : ["question_text", "answer_options", "correct_answer_index"]
-                        },
-                        "minItems" : 3,
-                        "maxItems" : 5
-                    }
-                },
-                "required" : ["topic", "questions", "message"]
-            }
-        }
-    }
-]
+load_dotenv()
 
-groq = AsyncGroq(api_key=os.getenv("GROQ_API_KEY"))  
-
-async def generate_response(prompt: str, history: list[dict] | None = None) -> dict:
+# Generate chat response using Groq LLM
+async def generate_chat_response(prompt: str, chat_history: List[AIMessage | HumanMessage | SystemMessage]) -> Dict[str, Any]:
     
+    # Setup Groq Client
+    groq = ChatGroq(
+        model = 'qwen/qwen3-32b',
+        temperature=0.5,
+        reasoning_format='parsed',
+        max_retries=3
+    )
+    
+    # 
     SYSTEM_PROMPT = (
         "Kamu adalah asisten belajar biologi yang ramah, sabar, dan santai — seperti teman belajar, bukan guru kaku. "
         "Jawaban kamu akan diucapkan langsung lewat Text-to-Speech (TTS), jadi ikuti aturan format berikut:\n\n"
-
+    
         "ATURAN FORMAT (wajib untuk TTS):\n"
         "Tulis hanya kalimat natural seperti orang berbicara. Jangan pakai bullet points, tanda bintang, tanda pagar, "
         "simbol atau emoji apapun. Jangan pakai format markdown sama sekali. Kalau perlu menyebutkan beberapa hal, "
@@ -59,95 +34,127 @@ async def generate_response(prompt: str, history: list[dict] | None = None) -> d
         "Kalau ada istilah medis, jelaskan langsung artinya dalam kalimat yang sama. "
         "Gunakan analogi sederhana supaya mudah dibayangkan. "
         "Jawaban biasa cukup 2 sampai 3 kalimat. Penjelasan mendalam maksimal 5 sampai 6 kalimat.\n\n"
-
+    
         "CARA BERSIKAP:\n"
-        "Bersikaplah seperti teman yang asik diajak ngobrol."
-
-        "KAPAN MEMICU MINIGAME (trigger_minigame):\n"
-        "Picu minigame setelah memberikan penjelasan lengkap tentang suatu topik, atau saat pengguna meminta kuis atau latihan. "
-        "JANGAN picu minigame untuk sapaan atau pertanyaan baru tentang topik berbeda. "
-        "SETELAH minigame dipicu, JANGAN lanjutkan kuis di dalam chat — minigame sudah ditangani oleh aplikasi secara terpisah. "
-        "Setelah trigger_minigame, cukup tunggu pertanyaan berikutnya dari pengguna seperti biasa. "
-        "Field 'message' ditulis dalam gaya bicara natural untuk TTS.\n"
+        "Bersikaplah seperti teman yang asik diajak ngobrol. Fokus hanya pada memberikan penjelasan materi "
+        "secara mengalir tanpa perlu menawarkan atau memicu fitur kuis atau permainan tambahan."
     )
-
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
-    if history:
-        messages.extend(history)
-    messages.append({"role": "user", "content": prompt})
+    
+    # Prepare messages: system prompt + chat history
+    messages = [SystemMessage(content=SYSTEM_PROMPT)] + chat_history + [HumanMessage(content=prompt)]
+    
     
     try:
-        response = await asyncio.wait_for(
-            groq.chat.completions.create(
-                model='qwen/qwen3-32b',
-                messages=messages,
-                tools=TOOLS,
-                tool_choice="auto",
-                temperature=0.7,
-                max_tokens=4096
-            ),
-            timeout=30.0
-        )
+        # ChatGroq.invoke appears to be blocking/synchronous; run in a thread
+        raw_resp = await asyncio.to_thread(groq.invoke, messages)
 
-        messages = response.choices[0].message
+        # Handle LangChain AIMessage responses explicitly
+        if isinstance(raw_resp, AIMessage):
+            response = str(raw_resp.text)
+            additional = getattr(raw_resp, 'additional_kwargs', {}) or {}
+            reasoning = str(additional.get('reasoning', additional.get('reason', '')))
 
-        if messages.tool_calls:
-            tool_call = messages.tool_calls[0]
-            function_name = tool_call.function.name
-            function_args = json.loads(tool_call.function.arguments)
-
-            if function_name == "trigger_minigame":
-                return {
-                    "action": function_name,
-                    "answer": clean_for_tts(function_args["message"]),
-                    "game_data": function_args,
-                }
-
-        else:
-            thoughts, answer = split_think_and_answer(response.choices[0].message.content)
-            return {"thoughts": thoughts, "answer": answer}
-    except Exception as e:
-        print(f"Error during response generation: {e}")
-        return {"answer": "Maaf, terjadi kesalahan. Coba lagi ya."}
+        return {
+            "thoughts": reasoning,
+            "answer": response
+        }
+    except Exception:
+        return {
+            "thoughts": "",
+            "answer": "Maaf, terjadi kesalahan saat memproses permintaan Anda. Silakan coba lagi."
+        }
     
-def split_think_and_answer(raw_text: str):
-    # Ensure we have a string
-    raw_text = str(raw_text or "")
 
-    # Match <think> ... </think> case-insensitively and allow attributes: <think ...>
-    thought_pattern = re.compile(r'<think\b[^>]*>(.*?)</think>', re.DOTALL | re.IGNORECASE)
-    thought_match = thought_pattern.search(raw_text)
-    thought = thought_match.group(1).strip() if thought_match and thought_match.group(1) else ""
+class QuizQuestion(BaseModel):
+    question_text: str
+    answer_options: List[str] = Field(
+        description="List of answer options",
+        min_items=4,
+        max_items=4
+    )
+    correct_answer_index: int = Field(
+        description="Index of the correct answer",
+        ge=0,
+        le=3
+    )
 
-    # Remove the <think> block entirely to leave only the answer
-    answer = thought_pattern.sub('', raw_text).strip()
+class QuizFormat(BaseModel):
+    topic: str = Field(description="Topic of the quiz")
+    message: str = Field(description="Introductory message for the quiz")
+    questions: List[QuizQuestion] = Field(
+        description="List of quiz questions",
+        min_items=3,
+        max_items=5
+    )
 
-    # Normalize None -> empty strings for safe JSON serialization
-    if thought is None:
-        thought = ""
-    if answer is None:
-        answer = ""
+@tool(description="Generate a quiz based on the given topic and chat history.")
+def generate_quiz(quiz_data: QuizFormat) -> Dict:
+    """
+    Generate a quiz based on the given topic and chat history.
+    The quiz should be in the format of QuizFormat, which includes an introductory message and a list of questions.
+    Each question should have 4 answer options and indicate which one is correct.
+    """
 
-    return thought, clean_for_tts(answer)
+    return quiz_data.model_dump()
+    
+async def generate_quiz_tool(topic: str, chat_history: List[AIMessage | HumanMessage | SystemMessage]) -> Dict:
+
+    groq = ChatGroq(
+        model = 'qwen/qwen3-32b',
+        temperature=0.5,
+        reasoning_format='parsed',
+        max_retries=3
+    )
+
+    # Bind the tool to the model using LangChain's bind_tools
+    groq_with_tools = groq.bind_tools([generate_quiz])
+
+    # Prompt yang fokus pada topik pilihan user & konteks chat
+    SYSTEM_PROMPT = (
+        f"Kamu adalah pakar biologi yang sangat teliti. Tugasmu adalah membuat kuis tentang: {topic}.\n\n"
+
+        "PERATURAN MUTLAK (SANGAT KETAT):\n"
+        "1. VERIFIKASI KATA: Sebelum membuat soal, periksa setiap kata dalam pertanyaan dan jawaban. "
+        "DILARANG keras menggunakan istilah medis atau konsep yang tidak tertulis secara eksplisit dalam 'chat_history'.\n"
+        "2. JANGAN menggunakan pengetahuan luar kamu tentang biologi (seperti nama katup, nama simpul saraf, atau anatomi spesifik) "
+        "JIKA asisten belum menyebutkannya di chat.\n"
+        "3. SUMBER SOAL: Ambil pertanyaan dari analogi atau penjelasan sederhana yang sudah diberikan (misalnya: analogi mesin motor, jumlah ruang, atau cara menjaga kesehatan jantung).\n"
+        "4. TINGKAT KESULITAN: Sesuaikan dengan bahasa santai asisten. Kalau asisten cuma bilang 'ruang', jangan pakai kata 'atrium' atau 'ventrikel' di pilihan jawaban.\n\n"
+
+        "CONTOH PELANGGARAN:\n"
+        "- Menggunakan istilah 'Katup Mitral' padahal di chat hanya bahas 'pintu jantung' = SALAH.\n"
+        "- Menggunakan istilah 'SA Node' padahal di chat hanya bahas 'listrik alami' = SALAH.\n\n"
+
+        "STRATEGI PEMBUATAN SOAL:\n"
+        "1. PRIORITAS UTAMA: Buat soal dari istilah teknis atau konsep yang BARU SAJA ditanyakan atau dijelaskan di chat (contoh: jika ada penjelasan 'Atrium' atau 'Ventrikel', WAJIB buat soal tentang itu).\n"
+        "2. KATA KUNCI: Gunakan kata kunci yang sama persis dengan yang ada di history. Jangan diganti jadi istilah medis lain.\n"
+        "3. OPTIMASI DISTRACTOR: Buat pilihan jawaban salah (distractor) yang masih berhubungan dengan topik, jangan buat jawaban salah yang terlalu konyol atau terlalu gampang ditebak.\n"
+        "4. JANGAN gunakan pengetahuan umum yang tidak ada di chat jika materi di chat sudah cukup untuk dibuat soal.\n"
+        f"5. WAJIB sertakan field 'topic' dengan nilai: '{topic}'\n"
+    )
 
 
-def clean_for_tts(text: str) -> str:
-    """Strip markdown formatting so the text is clean for Text-to-Speech."""
-    # Remove bold/italic markers: **, __, *, _
-    text = re.sub(r'\*{1,2}|_{1,2}', '', text)
-    # Remove markdown headings: ## Heading → Heading
-    text = re.sub(r'^#{1,6}\s*', '', text, flags=re.MULTILINE)
-    # Convert bullet/dash list items to a natural lead-in (remove the marker)
-    text = re.sub(r'^\s*[-*•]\s+', '', text, flags=re.MULTILINE)
-    # Convert numbered lists "1. ..." → remove the number prefix
-    text = re.sub(r'^\s*\d+\.\s+', '', text, flags=re.MULTILINE)
-    # Remove inline code backticks
-    text = re.sub(r'`+', '', text)
-    # Collapse multiple blank lines to a single space-separated sentence boundary
-    text = re.sub(r'\n{2,}', ' ', text)
-    # Replace single newlines with a space
-    text = re.sub(r'\n', ' ', text)
-    # Collapse multiple spaces
-    text = re.sub(r' {2,}', ' ', text)
-    return text.strip()
+    messages = [SystemMessage(content=SYSTEM_PROMPT)] + chat_history
 
+    try:
+        response = await asyncio.to_thread(groq_with_tools.invoke, messages)
+        
+        if response.tool_calls:
+            # Mengambil data kuis dari argumen tool
+            args = response.tool_calls[0]["args"]
+            # Terkadang args dibungkus dalam key 'quiz_data' sesuai nama param di fungsi
+            quiz_data = args.get("quiz_data", args)
+            # If it's a dict with the quiz structure, return it; otherwise serialize it
+            if isinstance(quiz_data, dict):
+                return quiz_data
+            else:
+                # quiz_data might be a Pydantic model instance, convert to dict
+                try:
+                    return quiz_data.model_dump() if hasattr(quiz_data, 'model_dump') else dict(quiz_data)
+                except Exception:
+                    return {"error": "Failed to serialize quiz data"}
+            
+        return {"error": "Gagal men-generate format kuis."}
+    except Exception as e:
+        import traceback
+        return {"error": "Maaf terjadi kesalahan saat membuat kuis", "details": str(e), "traceback": traceback.format_exc()}

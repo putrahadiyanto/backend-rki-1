@@ -4,7 +4,8 @@ import asyncio
 from typing import Dict
 from app.db.mongodb import get_database
 from app.models.chat import ChatSession, ChatMessage
-from app.services.llm_service import generate_response
+from app.services.llm_service import generate_chat_response, generate_quiz_tool
+from langchain.messages import AIMessage, HumanMessage, SystemMessage
 from app.utils.logger import get_logger
 
 logger = get_logger()
@@ -106,6 +107,7 @@ class ChatService:
         # Use a per-session lock so concurrent requests targeting the same
         # session are serialized and cannot race the read-modify-write steps.
         lock = await self._get_lock(session_id)
+        
         async with lock:
             # 1. Store user message
             user_msg = await self.add_message(session_id, username, "user", user_prompt)
@@ -120,9 +122,23 @@ class ChatService:
                 recent = prior[-self.MAX_CONTEXT_MESSAGES:]
                 history = [{"role": m["role"], "content": m["content"]} for m in recent]
 
+            # Convert history dicts into LangChain message objects
+            chat_history_msgs = []
+            for m in history:
+                role = m.get("role")
+                content = m.get("content", "")
+                if role == "user":
+                    chat_history_msgs.append(HumanMessage(content=content))
+                elif role == "assistant":
+                    chat_history_msgs.append(AIMessage(content=content))
+                elif role == "system":
+                    chat_history_msgs.append(SystemMessage(content=content))
+                else:
+                    chat_history_msgs.append(HumanMessage(content=content))
+
             # 3. Call the LLM with history, but limit global concurrent LLM calls
             async with self._llm_semaphore:
-                result = await generate_response(user_prompt, history)
+                result = await generate_chat_response(user_prompt, chat_history_msgs)
 
             # 4. Store assistant reply
             assistant_msg = await self.add_message(
@@ -136,3 +152,42 @@ class ChatService:
             "thoughts": result.get("thoughts", "") if result else "",
             **extra,
         }
+
+    async def generate_quiz(self, username: str, topic: str) -> dict:
+        """Get or create the user's latest session and generate a quiz for the topic.
+
+        Returns a dict containing `session_id` and `quiz` payload.
+        """
+        # Get user's sessions (already returned sorted by updated_at desc)
+        sessions = await self.get_sessions(username)
+        if sessions:
+            latest_session_id = sessions[0].get("session_id")
+        else:
+            latest_session_id = await self.create_session(username)
+
+        # Inline the generate_quiz_for_session logic here
+        session = await self.get_session(latest_session_id, username)
+        history: list[dict] = []
+        if session:
+            all_messages = session.get("messages", [])
+            recent = all_messages[-self.MAX_CONTEXT_MESSAGES:]
+            history = [{"role": m["role"], "content": m["content"]} for m in recent]
+
+        # Convert into LangChain message objects
+        chat_history_msgs = []
+        for m in history:
+            role = m.get("role")
+            content = m.get("content", "")
+            if role == "user":
+                chat_history_msgs.append(HumanMessage(content=content))
+            elif role == "assistant":
+                chat_history_msgs.append(AIMessage(content=content))
+            elif role == "system":
+                chat_history_msgs.append(SystemMessage(content=content))
+            else:
+                chat_history_msgs.append(HumanMessage(content=content))
+
+        # Call the async quiz tool directly (it already runs blocking LLM calls in a thread)
+        quiz_result = await generate_quiz_tool(topic, chat_history_msgs)
+
+        return {"session_id": latest_session_id, "quiz": quiz_result}

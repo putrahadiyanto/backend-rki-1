@@ -25,8 +25,8 @@ import httpx
 
 # --- Configuration -----------------------------------------------------------
 # Get the backend URL from environment variables, with a default
-SERVER_URL = os.getenv("SERVER_URL", "http://43.157.235.115:8000")
-WS_URL = os.getenv("WS_URL", "ws://43.157.235.115:8000")
+SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
+WS_URL = os.getenv("WS_URL", "ws://localhost:8000")
 TOKEN_FILE = ".chattest_token"
 
 # --- Credentials for fetching a new token ------------------------------------
@@ -159,13 +159,80 @@ async def main():
 
 
             # Chat loop
-            print("\n[Step 3] Start chatting!")
+            print("[Step 3] Start chatting!")
             print("Type your message and press Enter. Type 'quit' to exit.")
+            print("Type '/minigame' to trigger a quiz generation (you will be prompted for a topic).")
             while True:
                 message = input("\n> ")
                 if message.lower() == 'quit':
                     print("--- Exiting chat. ---")
                     break
+
+                # Special command to trigger quiz generation via HTTP endpoint
+                if message.strip().lower() in ('/minigame', 'minigame'):
+                    topic = input("Enter quiz topic: ")
+                    print(f"Requesting quiz for topic: {topic} ...")
+                    try:
+                        async with httpx.AsyncClient() as client:
+                            resp = await client.post(
+                                f"{SERVER_URL}/chat/generate_quiz",
+                                headers={"Authorization": f"Bearer {token}"},
+                                params={"topic": topic},
+                                timeout=30.0,
+                            )
+                            resp.raise_for_status()
+                            body = resp.json()
+                            print("--- Quiz generated ---")
+                            # The server may return {"session_id": id, "quiz": {...}}
+                            # or directly the quiz structure. Be forgiving about types.
+                            quiz = body.get("quiz") if isinstance(body, dict) and "quiz" in body else body
+                            print(f"Session: {body.get('session_id') if isinstance(body, dict) else 'unknown'}")
+
+                            # Normalize into questions list and metadata
+                            if isinstance(quiz, dict):
+                                topic_str = quiz.get('topic', topic)
+                                message_str = quiz.get('message', '')
+                                questions = quiz.get('questions', []) or []
+                            elif isinstance(quiz, list):
+                                topic_str = topic
+                                message_str = ''
+                                questions = quiz
+                            else:
+                                # Fallback: try attribute access or treat as empty
+                                topic_str = getattr(quiz, 'topic', topic)
+                                message_str = getattr(quiz, 'message', '')
+                                questions = getattr(quiz, 'questions', []) or []
+
+                            print(f"Topic: {topic_str}")
+                            print(f"Message: {message_str}")
+                            print(f"Questions count: {len(questions)}\n")
+                            for i, q in enumerate(questions, 1):
+                                # q may be dict-like or an object
+                                if isinstance(q, dict):
+                                    q_text = q.get('question_text', '')
+                                    opts = q.get('answer_options', []) or []
+                                    correct_idx = q.get('correct_answer_index', None)
+                                else:
+                                    q_text = getattr(q, 'question_text', '')
+                                    opts = getattr(q, 'answer_options', []) or []
+                                    correct_idx = getattr(q, 'correct_answer_index', None)
+
+                                # If question text missing, dump the raw question for debugging
+                                if not q_text:
+                                    try:
+                                        raw = json.dumps(q if isinstance(q, dict) else getattr(q, '__dict__', str(q)), ensure_ascii=False, indent=2)
+                                    except Exception:
+                                        raw = repr(q)
+                                    print(f"Q{i}: <no text available>\n{raw}")
+                                else:
+                                    print(f"Q{i}: {q_text}")
+
+                                for j, opt in enumerate(opts):
+                                    marker = '✓' if (correct_idx is not None and j == correct_idx) else ' '
+                                    print(f"  [{marker}] {opt}")
+                    except Exception as e:
+                        print(f"Failed to generate quiz: {e}")
+                    continue
 
                 await websocket.send(json.dumps({
                     "action": "send_message",

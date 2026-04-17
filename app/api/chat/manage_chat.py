@@ -37,3 +37,12 @@ async def delete_session(session_id: str, username: str = Depends(auth_service.g
     if not deleted:
         raise HTTPException(status_code=404, detail="Session not found")
     return {"deleted": True, "session_id": session_id}
+
+@router.post('/generate_quiz')
+async def generate_quiz(topic: str, username: str = Depends(auth_service.get_authenticated_username)):
+    try:
+        result = await chat_service.generate_quiz(username, topic)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Failed to generate quiz")
+
+    return result
