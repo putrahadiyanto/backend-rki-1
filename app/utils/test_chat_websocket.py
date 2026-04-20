@@ -25,8 +25,8 @@ import httpx
 
 # --- Configuration -----------------------------------------------------------
 # Get the backend URL from environment variables, with a default
-SERVER_URL = os.getenv("SERVER_URL", "http://localhost:8000")
-WS_URL = os.getenv("WS_URL", "ws://localhost:8000")
+SERVER_URL = os.getenv("SERVER_URL", "https://backend.rkiprojek.web.id")
+WS_URL = os.getenv("WS_URL", "ws://backend.rkiprojek.web.id")
 TOKEN_FILE = ".chattest_token"
 
 # --- Credentials for fetching a new token ------------------------------------
