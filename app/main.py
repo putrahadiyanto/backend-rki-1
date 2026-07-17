@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from app.api.auth.auth import router as auth_router
 from app.api.chat.manage_chat import router as crud_chat
 from app.api.chat.websocket import router as chat_router
+from app.api.detection.detect import router as detection_router
 from app.db.mongodb import connect, db, disconnect
 from app.utils.seeder import seed_admin
 
@@ -48,6 +49,7 @@ app.include_router(chat_router)
 # include HTTP session management endpoints
 app.include_router(crud_chat, prefix="/chat", tags=["chat"])
 # app.include_router(ingest_router)
+app.include_router(detection_router, prefix="/api", tags=["detection"])
 
 
 @app.get("/")
