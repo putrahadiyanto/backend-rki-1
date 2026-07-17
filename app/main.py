@@ -38,9 +38,6 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="RKI Backend API",
     lifespan=lifespan,
-    docs_url=None,
-    redoc_url=None,
-    openapi_url=None,
 )
 
 # app.include_router(voice_router)
