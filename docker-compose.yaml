@@ -22,19 +22,14 @@ services:
   
   backend:
     build: .
-    container_name : backend_fastapi
-    ports:
-      - "8000:8000"
+    container_name: backend_fastapi
+    network_mode: host
     env_file:
       - .env
     environment:
       - WATCHFILES_USE_POLLING=true
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
     depends_on:
       - mongodb
-    networks:
-      - backend_network
     volumes:
       - ./app:/code/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
@@ -44,14 +39,13 @@ services:
       - server
     image: docker.io/cloudflare/cloudflared:latest
     container_name: cloudflare_tunnel
-    restart : always
+    network_mode: host
+    restart: always
     environment:
       - CLOUDFLARE_TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
     command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
     depends_on:
       - backend
-    networks:
-      - backend_network
   
 networks:
   backend_network:
