@@ -206,7 +206,7 @@ ws.onmessage = (ev) => {
 
 **Operational notes for frontend**
 
-- **LLM Integration**: The backend uses **LangChain** with **Groq** (qwen/qwen3-32b model) for chat responses and quiz generation.
+- **LLM Integration**: The backend uses **LangChain** with **Groq** (openai/gpt-oss-20b model) for chat responses and quiz generation.
   - Chat responses are generated using `generate_chat_response()` which accepts a user prompt and recent chat history as LangChain message objects.
   - Quiz generation uses `generate_quiz_tool()` which leverages LangChain tool binding to invoke structured quiz generation via the `generate_quiz` tool.
   
@@ -230,7 +230,7 @@ ws.onmessage = (ev) => {
 - `SECRET_KEY` — required for JWT signing
 - `MONGO_URI` — connection string to MongoDB
 - `MONGO_DB_NAME` — database name
-- `GROQ_API_KEY` — API key for Groq LLM provider (qwen/qwen3-32b model)
+- `GROQ_API_KEY` — API key for Groq LLM provider (openai/gpt-oss-20b model)
 - `LLM_MAX_CONCURRENCY` — integer limit for simultaneous LLM calls (default: 5)
 - `ACCESS_TOKEN_EXPIRE_MINUTES`, `REFRESH_TOKEN_EXPIRE_DAYS` — JWT expiration settings
 

@@ -15,7 +15,7 @@ async def generate_chat_response(prompt: str, chat_history: List[AIMessage | Hum
     
     # Setup Groq Client
     groq = ChatGroq(
-        model = 'qwen/qwen3-32b',
+        model = 'openai/gpt-oss-20b',
         temperature=0.5,
         reasoning_format='parsed',
         max_retries=3
@@ -107,7 +107,7 @@ def generate_quiz(quiz_data: QuizFormat) -> Dict:
 async def generate_quiz_tool(topic: str, chat_history: List[AIMessage | HumanMessage | SystemMessage]) -> Dict:
 
     groq = ChatGroq(
-        model = 'qwen/qwen3-32b',
+        model = 'openai/gpt-oss-20b',
         temperature=0.5,
         reasoning_format='parsed',
         max_retries=3
